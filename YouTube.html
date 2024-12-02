@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini YouTube</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        input, button { margin: 10px; padding: 10px; }
+        .video-card { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Mini YouTube</h1>
+    
+    <div id="sign-up">
+        <h2>Sign Up</h2>
+        <input type="text" id="username" placeholder="Enter Username">
+        <button onclick="signUp()">Sign Up</button>
+    </div>
+
+    <div id="upload-section" style="display:none;">
+        <h2>Upload Video Metadata</h2>
+        <input type="text" id="video-title" placeholder="Video Title">
+        <textarea id="video-description" placeholder="Video Description"></textarea><br>
+        <button onclick="uploadVideo()">Upload Video</button>
+    </div>
+
+    <div id="search-section">
+        <h2>Search Videos</h2>
+        <input type="text" id="search-input" placeholder="Search by title" oninput="searchVideos()">
+        <div id="search-results"></div>
+    </div>
+
+    <div id="video-list">
+        <h2>Uploaded Videos</h2>
+        <div id="videos"></div>
+    </div>
+
+    <script>
+        let db;
+        let currentUser = null;
+        
+        // Initialize IndexedDB
+        function initDB() {
+            const request = indexedDB.open("miniYouTubeDB", 1);
+
+            request.onupgradeneeded = function(event) {
+                db = event.target.result;
+                const videoStore = db.createObjectStore("videos", { keyPath: "id", autoIncrement: true });
+                videoStore.createIndex("title", "title", { unique: false });
+            };
+
+            request.onsuccess = function(event) {
+                db = event.target.result;
+                loadVideos();
+            };
+
+            request.onerror = function(event) {
+                alert("Error opening database.");
+            };
+        }
+
+        // Sign up function
+        function signUp() {
+            const username = document.getElementById("username").value;
+            if (username) {
+                currentUser = username;
+                document.getElementById("sign-up").style.display = "none";
+                document.getElementById("upload-section").style.display = "block";
+            } else {
+                alert("Please enter a username.");
+            }
+        }
+
+        // Upload video metadata
+        function uploadVideo() {
+            const title = document.getElementById("video-title").value;
+            const description = document.getElementById("video-description").value;
+            if (title && description) {
+                const transaction = db.transaction(["videos"], "readwrite");
+                const videoStore = transaction.objectStore("videos");
+                videoStore.add({ title, description, uploader: currentUser });
+                transaction.oncomplete = function() {
+                    alert("Video uploaded!");
+                    loadVideos();
+                };
+                transaction.onerror = function() {
+                    alert("Error uploading video.");
+                };
+            } else {
+                alert("Please fill in both title and description.");
+            }
+        }
+
+        // Load all videos
+        function loadVideos() {
+            const transaction = db.transaction(["videos"], "readonly");
+            const videoStore = transaction.objectStore("videos");
+            const request = videoStore.getAll();
+
+            request.onsuccess = function() {
+                const videos = request.result;
+                const videoList = document.getElementById("videos");
+                videoList.innerHTML = "";
+                videos.forEach(video => {
+                    const videoCard = document.createElement("div");
+                    videoCard.classList.add("video-card");
+                    videoCard.innerHTML = `
+                        <h3>${video.title}</h3>
+                        <p>${video.description}</p>
+                        <p><strong>Uploaded by:</strong> ${video.uploader}</p>
+                        <button onclick="deleteVideo(${video.id})">Delete</button>
+                    `;
+                    videoList.appendChild(videoCard);
+                });
+            };
+
+            request.onerror = function() {
+                alert("Error loading videos.");
+            };
+        }
+
+        // Delete video
+        function deleteVideo(id) {
+            const transaction = db.transaction(["videos"], "readwrite");
+            const videoStore = transaction.objectStore("videos");
+            videoStore.delete(id);
+            transaction.oncomplete = function() {
+                alert("Video deleted!");
+                loadVideos();
+            };
+            transaction.onerror = function() {
+                alert("Error deleting video.");
+            };
+        }
+
+        // Search for videos by title
+        function searchVideos() {
+            const searchQuery = document.getElementById("search-input").value.toLowerCase();
+            const transaction = db.transaction(["videos"], "readonly");
+            const videoStore = transaction.objectStore("videos");
+            const index = videoStore.index("title");
+            const request = index.openCursor(IDBKeyRange.lowerBound(searchQuery));
+
+            request.onsuccess = function(event) {
+                const cursor = event.target.result;
+                const searchResults = document.getElementById("search-results");
+                searchResults.innerHTML = "";
+
+                if (cursor) {
+                    const video = cursor.value;
+                    const videoCard = document.createElement("div");
+                    videoCard.classList.add("video-card");
+                    videoCard.innerHTML = `
+                        <h3>${video.title}</h3>
+                        <p>${video.description}</p>
+                        <p><strong>Uploaded by:</strong> ${video.uploader}</p>
+                    `;
+                    searchResults.appendChild(videoCard);
+                    cursor.continue();
+                }
+            };
+
+            request.onerror = function() {
+                alert("Error searching videos.");
+            };
+        }
+
+        // Initialize the database when the page loads
+        window.onload = function() {
+            initDB();
+        };
+    </script>
+</body>
+</html>
